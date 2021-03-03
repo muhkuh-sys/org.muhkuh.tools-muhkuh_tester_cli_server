@@ -1,0 +1,5 @@
+zmq_port = 12336
+kafka_broker =
+kafka_options =
+folder_testid01 = tests/test01
+folder_testid02 = tests/test02
