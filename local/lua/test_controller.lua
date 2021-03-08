@@ -10,6 +10,7 @@ function TestController:_init(tLog, tLogTest, tLogKafka, tLogLocal, atTestFolder
   self.json = require 'dkjson'
   self.pl = require'pl.import_into'()
   self.ProcessZmq = require 'process_zmq'
+  self.uv = require 'lluv'
 
   self.m_testProcess = nil
 
@@ -47,6 +48,7 @@ end
 function TestController:__startTest(tMessage)
   local tLog = self.tLog
   local pl = self.pl
+  local uv = self.uv
 
   if self.m_tState~=self.STATE_IDLE then
     tLog.error('Rejecting "run" command - not in idle state.')
@@ -73,6 +75,7 @@ function TestController:__startTest(tMessage)
         else
           -- Set the new system attributes.
           local tSystemAttributes = {
+            hostname = uv.os_gethostname(),
             test = {
               title = tTestDescription:getTitle(),
               subtitle = tTestDescription:getSubtitle()
