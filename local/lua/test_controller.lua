@@ -64,6 +64,23 @@ function TestController:__startTest(tMessage)
       if strTestPath==nil then
         self:__sendErrorResponse('The request has an unknown test ID.')
       else
+        -- Try to read the test name and VCS version from the package file.
+        local strTestPackageName
+        local strTestPackageVcsId
+        local strPackageFile = pl.path.join(strTestPath, '.jonchki', 'package.txt')
+        if pl.path.exists(strPackageFile)~=strPackageFile then
+          tLog.warning('The package file "%s" does not exist.', strPackageFile)
+        else
+          local tPackage, strError = pl.config.read(strPackageFile)
+          if tPackage==nil then
+            tLog.warning('Failed to read the package file "%s": %s', strPackageFile, tostring(strError))
+          else
+            pl.pretty.dump(tPackage)
+            strTestPackageName = tPackage.PACKAGE_NAME
+            strTestPackageVcsId = tPackage.PACKAGE_VCS_ID
+          end
+        end
+
         local strTestXmlFile = pl.path.join(strTestPath, 'tests.xml')
 
         local TestDescription = require 'test_description'
@@ -78,7 +95,9 @@ function TestController:__startTest(tMessage)
             hostname = uv.os_gethostname(),
             test = {
               title = tTestDescription:getTitle(),
-              subtitle = tTestDescription:getSubtitle()
+              subtitle = tTestDescription:getSubtitle(),
+              package_name = strTestPackageName,
+              package_vcs_id = strTestPackageVcsId
             }
           }
           self.m_logKafka:setSystemAttributes(tSystemAttributes)
