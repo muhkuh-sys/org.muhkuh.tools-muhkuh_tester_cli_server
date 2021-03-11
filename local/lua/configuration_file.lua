@@ -46,7 +46,9 @@ function ConfigurationFile.read(tLog)
   -- Convert the "kafka_debugging" entry to a boolean.
   local tValue = tConfiguration.kafka_debugging
   local fValue = false
-  if string.lower(tValue)=='true' then
+  if type(tValue)=='boolean' then
+    fValue = tValue
+  elseif type(tValue)=='string' and string.lower(tValue)=='true' then
     fValue = true
   end
   tConfiguration.kafka_debugging = fValue
