@@ -22,6 +22,7 @@ if strDistId=='windows' then
   t:install('local/windows/run_server.bat', '${install_base}/')
 elseif strDistId=='ubuntu' then
   t:install('local/linux/run_server', '${install_base}/')
+  t:install('local/linux/systemd/muhkuh_cli.service', '${install_base}/systemd/')
 end
 
 t:createPackageFile()
