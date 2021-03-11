@@ -1,0 +1,14 @@
+[Unit]
+Description=Muhkuh CLI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/muhkuh_tester_cli_server-0.0.1
+ExecStart=/opt/muhkuh_tester_cli_server-0.0.1/lua5.4 cli_server.lua
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
