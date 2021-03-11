@@ -2,7 +2,7 @@ local class = require 'pl.class'
 local LogKafka = class()
 
 
-function LogKafka:_init(tLog)
+function LogKafka:_init(tLog, fActivateDebugging)
   self.date = require 'date'
   self.dkjson = require 'dkjson'
 
@@ -20,10 +20,14 @@ function LogKafka:_init(tLog)
   local socket = require("socket")
   ulid.set_time_func(socket.gettime)
 
-  self.m_atSystemAttributes = {}
+  -- Convert the argument to boolean.
+  self.m_fDebuggingIsActive = fActivateDebugging
+  if fActivateDebugging==true then
+    tLog.debug('Kafka debugging is active.')
+  end
 
-  -- Make a copy of the attributes.
-  self.m_atAttributes = pl.tablex.deepcopy(tSystemAttributes)
+  self.m_atSystemAttributes = {}
+  self.m_atAttributes = {}
 
   self.m_astrLogMessages = {}
   self.m_sizLogMessages = 0
@@ -51,6 +55,22 @@ function LogKafka:_init(tLog)
   self.tTopic_teststations = nil
   self.tTopic_logs = nil
   self.tTopic_events = nil
+  if fActivateDebugging==true then
+    self.tTopic_teststations_cnt = 0
+    self.tTopic_logs_cnt = 0
+    self.tTopic_events_cnt = 0
+    local strPath = '/tmp/muhkuh-production-teststations-%03d.json'
+    self.tTopic_teststations_template = strPath
+    tLog.debug('Write messages for the testatations topic to: %s', strPath)
+
+    strPath = '/tmp/muhkuh-production-logs-%03d.json'
+    self.tTopic_logs_template = strPath
+    tLog.debug('Write messages for the logs topic to: %s', strPath)
+
+    strPath = '/tmp/muhkuh-production-events-%03d.json'
+    self.tTopic_events_template = strPath
+    tLog.debug('Write messages for the events topic to: %s', strPath)
+  end
 end
 
 
@@ -84,7 +104,12 @@ end
 
 
 function LogKafka:setSystemAttributes(atSystemAttributes)
+  local pl = self.pl
+
   self.m_atSystemAttributes = atSystemAttributes
+
+  -- Make a copy of the attributes.
+  self.m_atAttributes = pl.tablex.deepcopy(atSystemAttributes)
 end
 
 
@@ -123,18 +148,28 @@ end
 
 
 function LogKafka:registerInstance(atAttributes)
+  local pl = self.pl
+
+  -- Merge the attributes with the system attributes.
+  local atAttrMerged = pl.tablex.deepcopy(atAttributes)
+  pl.tablex.update(atAttrMerged, self.m_atSystemAttributes)
+  atAttrMerged.timestamp = self.date(false):fmt('%Y-%m-%d %H:%M:%S')
+
+  -- Convert the attributes to JSON.
+  local strJson = self.dkjson.encode(atAttrMerged)
+
+  -- Send the message to the Kafka topic.
   local tTopic = self.tTopic_teststations
   if tTopic~=nil then
-    local pl = self.pl
-
-    -- Merge the attributes with the system attributes.
-    local atAttrMerged = pl.tablex.deepcopy(atAttributes)
-    pl.tablex.update(atAttrMerged, self.m_atSystemAttributes)
-    atAttrMerged.timestamp = self.date(false):fmt('%Y-%m-%d %H:%M:%S')
-
-    -- Convert the attributes to JSON.
-    local strJson = self.dkjson.encode(atAttrMerged)
     self:__sendMessage(tTopic, strJson)
+  end
+
+  -- Write the message to a temp file.
+  if self.m_fDebuggingIsActive==true then
+    local tFile = io.open(string.format(self.tTopic_teststations_template, self.tTopic_teststations_cnt), 'w')
+    tFile:write(strJson)
+    tFile:close()
+    self.tTopic_teststations_cnt = self.tTopic_teststations_cnt + 1
   end
 end
 
@@ -157,14 +192,19 @@ function LogKafka:__sendMessageBuffer()
     local strJson = self.dkjson.encode(atAttr)
     atAttr.log = nil
 
-    self:__sendMessage(self.tTopic_logs, strJson)
---[[
-    -- DEBUG: Write this to a temp file.
-    local tFile = io.open(string.format('/tmp/muhkuh-production-logs-%03d.json', self.tTopic_logs_cnt), 'w')
-    tFile:write(strJson)
-    tFile:close()
-    self.tTopic_logs_cnt = self.tTopic_logs_cnt + 1
---]]
+    -- Send the message to the Kafka topic.
+    local tTopic = self.tTopic_logs
+    if tTopic~=nil then
+      self:__sendMessage(tTopic, strJson)
+    end
+
+    -- Write the message to a temp file.
+    if self.m_fDebuggingIsActive==true then
+      local tFile = io.open(string.format(self.tTopic_logs_template, self.tTopic_logs_cnt), 'w')
+      tFile:write(strJson)
+      tFile:close()
+      self.tTopic_logs_cnt = self.tTopic_logs_cnt + 1
+    end
   end
 
   self.m_astrLogMessages = {}
@@ -184,183 +224,172 @@ function LogKafka:__sendEvent(strEventId, atAttributes)
   atAttr.eventAttr = nil
   atAttr.timestamp = nil
 
-  self:__sendMessage(self.tTopic_events, strJson)
+  -- Send the event to the Kafka topic.
+  local tTopic = self.tTopic_events
+  if tTopic~=nil then
+    self:__sendMessage(tTopic, strJson)
+  end
 
---[[
-    -- DEBUG: Write this to a temp file.
-    local tFile = io.open(string.format('/tmp/muhkuh-production-events-%03d.json', self.tTopic_events_cnt), 'w')
+  -- Write the event to a temp file.
+  if self.m_fDebuggingIsActive==true then
+    local tFile = io.open(string.format(self.tTopic_events_template, self.tTopic_events_cnt), 'w')
     tFile:write(strJson)
     tFile:close()
     self.tTopic_events_cnt = self.tTopic_events_cnt + 1
---]]
+  end
 end
 
 
 
 function LogKafka:onLogMessage(uiLogLevel, strLogMessage)
-  print('***LOG***', uiLogLevel, strLogMessage)
-  if self.tTopic_logs~=nil then
-    local date = self.date
-    local sizLogMessagesMax = self.m_sizLogMessagesMax
-    local astrLogMessages = self.m_astrLogMessages
+  local date = self.date
+  local sizLogMessagesMax = self.m_sizLogMessagesMax
+  local astrLogMessages = self.m_astrLogMessages
 
-    -- Get the log level as a string.
-    local strLogLevel = self.m_astrLogLevel[uiLogLevel]
-    if strLogLevel==nil then
-      strLogLevel = tostring(uiLogLevel)
-    end
+  -- Get the log level as a string.
+  local strLogLevel = self.m_astrLogLevel[uiLogLevel]
+  if strLogLevel==nil then
+    strLogLevel = tostring(uiLogLevel)
+  end
 
-    -- Combine the pretty-print level with the log message.
-    local strMsg = date(false):fmt('%Y-%m-%d %H:%M:%S')..' ['..strLogLevel..'] '..tostring(strLogMessage)
-    local sizMsg = string.len(strMsg)
+  -- Combine the pretty-print level with the log message.
+  local strMsg = date(false):fmt('%Y-%m-%d %H:%M:%S')..' ['..strLogLevel..'] '..tostring(strLogMessage)
+  local sizMsg = string.len(strMsg)
 
-    -- Does the new log message fit into the buffer?
-    if (self.m_sizLogMessages+sizMsg)>sizLogMessagesMax then
-      -- Flush the message buffer.
-      self:__sendMessageBuffer()
+  -- Does the new log message fit into the buffer?
+  if (self.m_sizLogMessages+sizMsg)>sizLogMessagesMax then
+    -- Flush the message buffer.
+    self:__sendMessageBuffer()
 
-      -- Chunk the new message.
-      repeat
-        -- Get the size of the next chunk.
-        local sizChunk = sizMsg
-        -- Does the chunk fit into the buffer?
-        if sizChunk>sizLogMessagesMax then
-          sizChunk = sizLogMessagesMax
-          -- Add a part of the message to the buffer.
-          table.insert(astrLogMessages, string.sub(strMsg, 1, sizChunk))
-          -- Update the size of the buffer.
-          self.m_sizLogMessages = self.m_sizLogMessages + sizChunk
+    -- Chunk the new message.
+    repeat
+      -- Get the size of the next chunk.
+      local sizChunk = sizMsg
+      -- Does the chunk fit into the buffer?
+      if sizChunk>sizLogMessagesMax then
+        sizChunk = sizLogMessagesMax
+        -- Add a part of the message to the buffer.
+        table.insert(astrLogMessages, string.sub(strMsg, 1, sizChunk))
+        -- Update the size of the buffer.
+        self.m_sizLogMessages = self.m_sizLogMessages + sizChunk
 
-          -- Flush the buffer.
-          self:__sendMessageBuffer()
+        -- Flush the buffer.
+        self:__sendMessageBuffer()
 
-          sizMsg = sizMsg - sizChunk
-          strMsg = string.sub(strMsg, sizChunk+1)
-        else
-          -- Add the complete message to the buffer.
-          table.insert(astrLogMessages, strMsg)
-          -- Update the size of the buffer.
-          self.m_sizLogMessages = self.m_sizLogMessages + sizMsg
+        sizMsg = sizMsg - sizChunk
+        strMsg = string.sub(strMsg, sizChunk+1)
+      else
+        -- Add the complete message to the buffer.
+        table.insert(astrLogMessages, strMsg)
+        -- Update the size of the buffer.
+        self.m_sizLogMessages = self.m_sizLogMessages + sizMsg
 
-          sizMsg = 0
-        end
-      until sizMsg==0
-    else
-      -- The new message fits into the buffer.
-      table.insert(astrLogMessages, strMsg)
-      -- Update the size of the buffer.
-      self.m_sizLogMessages = self.m_sizLogMessages + sizMsg
-    end
+        sizMsg = 0
+      end
+    until sizMsg==0
+  else
+    -- The new message fits into the buffer.
+    table.insert(astrLogMessages, strMsg)
+    -- Update the size of the buffer.
+    self.m_sizLogMessages = self.m_sizLogMessages + sizMsg
   end
 end
 
 
 
 function LogKafka:onEvent(strEventId, tEventAttributes)
-  print('*** Event ***', strEventId)
-  self.pl.pretty.dump(tEventAttributes)
-  if self.tTopic_events~=nil then
-    self:__sendEvent(strEventId, tEventAttributes)
-  end
+  self:__sendEvent(strEventId, tEventAttributes)
 end
 
 
 
 function LogKafka:onTestStepStarted(uiStepIndex, strTestCaseId, strTestCaseName, atLogAttributes)
-  if self.tTopic_logs~=nil then
-    local pl = self.pl
+  local pl = self.pl
 
-    -- Send any waiting messages.
-    self:__sendMessageBuffer()
+  -- Send any waiting messages.
+  self:__sendMessageBuffer()
 
-    -- Create a new ULID for the test step.
-    local strUlidTestStep = self:__getNewUlid()
-    self.m_strUlidTestStep = strUlidTestStep
+  -- Create a new ULID for the test step.
+  local strUlidTestStep = self:__getNewUlid()
+  self.m_strUlidTestStep = strUlidTestStep
 
-    -- Make a copy of the attributes.
-    local atAttributes = pl.tablex.deepcopy(atLogAttributes)
-    pl.tablex.update(atAttributes, self.m_atSystemAttributes)
+  -- Make a copy of the attributes.
+  local atAttributes = pl.tablex.deepcopy(atLogAttributes)
+  pl.tablex.update(atAttributes, self.m_atSystemAttributes)
 
-    -- Append the ULID for the test run.
-    atAttributes.test_run_ulid = self.m_strUlidTestRun
-    -- Append the test step.
-    atAttributes.test_step = uiStepIndex
-    -- Append the test ID and name.
-    atAttributes.test_id = strTestCaseId
-    atAttributes.test_name = strTestCaseName
-    -- Append the ULID for the test step.
-    atAttributes.test_step_ulid = strUlidTestStep
+  -- Append the ULID for the test run.
+  atAttributes.test_run_ulid = self.m_strUlidTestRun
+  -- Append the test step.
+  atAttributes.test_step = uiStepIndex
+  -- Append the test ID and name.
+  atAttributes.test_id = strTestCaseId
+  atAttributes.test_name = strTestCaseName
+  -- Append the ULID for the test step.
+  atAttributes.test_step_ulid = strUlidTestStep
 
-    self.m_atAttributes = atAttributes
-  end
+  self.m_atAttributes = atAttributes
 end
 
 
 
 function LogKafka:onTestStepFinished()
-  if self.tTopic_logs~=nil then
-    -- Send any waiting messages.
-    self:__sendMessageBuffer()
+  -- Send any waiting messages.
+  self:__sendMessageBuffer()
 
-    local atAttributes = self.m_atAttributes
+  local atAttributes = self.m_atAttributes
 
-    self.m_strUlidTestStep = nil
+  self.m_strUlidTestStep = nil
 
-    -- Remove the test step from the attributes.
-    atAttributes.test_step = nil
-    -- Remove the test ID and name.
-    atAttributes.test_id = nil
-    atAttributes.test_name = nil
-    -- Remove the test step ULID from the attributes.
-    atAttributes.test_step_ulid = nil
-  end
+  -- Remove the test step from the attributes.
+  atAttributes.test_step = nil
+  -- Remove the test ID and name.
+  atAttributes.test_id = nil
+  atAttributes.test_name = nil
+  -- Remove the test step ULID from the attributes.
+  atAttributes.test_step_ulid = nil
 end
 
 
 
 function LogKafka:onTestRunStarted(atLogAttributes)
-  if self.tTopic_logs~=nil then
-    local pl = self.pl
+  local pl = self.pl
 
-    -- Send any waiting messages.
-    self:__sendMessageBuffer()
+  -- Send any waiting messages.
+  self:__sendMessageBuffer()
 
-    -- Create a new ULID for the test.
-    local strUlidTestRun = self:__getNewUlid()
-    self.m_strUlidTestRun = strUlidTestRun
-    -- Clear any old ULID for the test step.
-    self.m_strUlidTestStep = nil
+  -- Create a new ULID for the test.
+  local strUlidTestRun = self:__getNewUlid()
+  self.m_strUlidTestRun = strUlidTestRun
+  -- Clear any old ULID for the test step.
+  self.m_strUlidTestStep = nil
 
-    -- Make a copy of the attributes.
-    local atAttributes = pl.tablex.deepcopy(atLogAttributes)
-    pl.tablex.update(atAttributes, self.m_atSystemAttributes)
+  -- Make a copy of the attributes.
+  local atAttributes = pl.tablex.deepcopy(atLogAttributes)
+  pl.tablex.update(atAttributes, self.m_atSystemAttributes)
 
-    -- Append the ULID for the test run.
-    atAttributes.test_run_ulid = strUlidTestRun
+  -- Append the ULID for the test run.
+  atAttributes.test_run_ulid = strUlidTestRun
 
-    self.m_atAttributes = atAttributes
-  end
+  self.m_atAttributes = atAttributes
 end
 
 
 
 function LogKafka:onTestRunFinished()
-  if self.tTopic_logs~=nil then
-    -- Send any waiting messages.
-    self:__sendMessageBuffer()
+  -- Send any waiting messages.
+  self:__sendMessageBuffer()
 
-    local atAttributes = self.m_atAttributes
+  local atAttributes = self.m_atAttributes
 
-    self.m_strUlidTestRun = nil
-    self.m_strUlidTestStep = nil
+  self.m_strUlidTestRun = nil
+  self.m_strUlidTestStep = nil
 
-    -- Remove the test run ULID from the attributes.
-    atAttributes.test_run_ulid = nil
-    -- Remove the test step from the attributes.
-    atAttributes.test_step = nil
-    -- Remove the test step ULID from the attributes.
-    atAttributes.test_step_ulid = nil
-  end
+  -- Remove the test run ULID from the attributes.
+  atAttributes.test_run_ulid = nil
+  -- Remove the test step from the attributes.
+  atAttributes.test_step = nil
+  -- Remove the test step ULID from the attributes.
+  atAttributes.test_step_ulid = nil
 end
 
 

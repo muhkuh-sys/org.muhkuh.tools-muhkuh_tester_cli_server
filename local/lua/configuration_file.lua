@@ -19,7 +19,8 @@ function ConfigurationFile.read(tLog)
     interface = '',
     zmq_port = 12336,
     kafka_broker = '',
-    kafka_options = {}
+    kafka_options = {},
+    kafka_debugging = false
   }
   -- Join both configurations.
   local tConfiguration = {}
@@ -42,6 +43,13 @@ function ConfigurationFile.read(tLog)
     end
   end
   tConfiguration.atFolder = atFolder
+  -- Convert the "kafka_debugging" entry to a boolean.
+  local tValue = tConfiguration.kafka_debugging
+  local fValue = false
+  if string.lower(tValue)=='true' then
+    fValue = true
+  end
+  tConfiguration.kafka_debugging = fValue
 
   return tConfiguration
 end

@@ -66,7 +66,7 @@ else
 end
 
 
-local tLogKafka = require 'log-kafka'(tLog)
+local tLogKafka = require 'log-kafka'(tLog, tConfiguration.kafka_debugging)
 -- Connect the log consumer to a broker.
 local strKafkaBroker = tConfiguration.kafka_broker
 if strKafkaBroker~=nil and strKafkaBroker~='' then
