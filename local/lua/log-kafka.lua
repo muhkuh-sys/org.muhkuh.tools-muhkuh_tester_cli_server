@@ -367,7 +367,7 @@ function LogKafka:onTestStepFinished()
   atAttributes.test_step_ulid = nil
 
   -- Try to flush a few messages.
-  self.__flushMessages(500)
+  self:__flushMessages(500)
 end
 
 
@@ -413,7 +413,7 @@ function LogKafka:onTestRunFinished()
   atAttributes.test_step_ulid = nil
 
   -- Try to flush the rest of the messages.
-  self.__flushMessages(2000)
+  self:__flushMessages(2000)
 end
 
 
