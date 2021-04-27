@@ -24,6 +24,8 @@ function TestController:_init(tLog, tLogTest, tLogKafka, tLogLocal, atTestFolder
   self.m_zmqServerAddress = nil
   self.m_zmqPoll = nil
 
+  self.m_tKeepAliveTimer = nil
+
   self.STATE_IDLE = 0
   self.STATE_RUNNING = 1
   self.m_tState = self.STATE_IDLE
@@ -40,6 +42,15 @@ function TestController:__sendErrorResponse(strMessage)
       message = strMessage
     }
     tSocket:send(strResponse)
+  end
+end
+
+
+
+function TestController:__sendStillRunning()
+  local tSocket = self.m_zmqSocket
+  if tSocket~=nil then
+    tSocket:send('STILL_RUNNING')
   end
 end
 
@@ -141,6 +152,13 @@ function TestController:__startTest(tMessage)
 
             -- Set the state to "running".
             self.m_tState = self.STATE_RUNNING
+
+            -- Send a keep alive message each 2 seconds.
+            local this = self
+            self.m_tKeepAliveTimer = uv.timer():start(2000, function(tTimer)
+              this:__sendStillRunning()
+              tTimer:again(2000)
+            end)
 
             -- Run the test and set this as the consumer for the terminate message.
             tTestProc:run(self.onTestTerminate, self)
@@ -276,6 +294,9 @@ function TestController:onTestTerminate()
   local json = self.json
 
   tLog.info('onTestTerminate')
+
+  -- Stop the keep alive timer.
+  self.m_tKeepAliveTimer:stop()
 
   -- The test is not running anymore.
   self.m_tState = self.STATE_IDLE
