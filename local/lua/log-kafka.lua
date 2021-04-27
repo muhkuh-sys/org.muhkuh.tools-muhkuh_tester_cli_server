@@ -75,6 +75,15 @@ end
 
 
 
+function LogKafka:__flushMessages(uiTimeout)
+  local tProducer = self.tProducer
+  if tProducer~=nil then
+    tProducer:flush(uiTimeout)
+  end
+end
+
+
+
 function LogKafka:__sendMessage(tTopic, strMessage)
   local tLog = self.tLog
   local kafka = self.kafka
@@ -136,9 +145,18 @@ function LogKafka:connect(strBrokerList, atOptions)
       local tProducer = kafka.Producer(strBrokerList, tProducer_conf)
       self.tProducer = tProducer
 
-      self.tTopic_teststations = tProducer:create_topic('muhkuh-production-teststations')
-      self.tTopic_logs = tProducer:create_topic('muhkuh-production-logs')
-      self.tTopic_events = tProducer:create_topic('muhkuh-production-events')
+      -- Compress all topics with GZIP. This takes the most CPU power to
+      -- produce and consume messages, but it results in the smallest files
+      -- compared to the alternatives snappy and lz4. As we are using kafka as
+      -- a temporary storage for a while, it is our top priority to keep the
+      -- disk usage as small as possible.
+      local tTopic_conf = {
+        ['compression.codec'] = 'gzip',
+        ['compression.level'] = 9
+      }
+      self.tTopic_teststations = tProducer:create_topic('muhkuh-production-teststations', tTopic_conf)
+      self.tTopic_logs = tProducer:create_topic('muhkuh-production-logs', tTopic_conf)
+      self.tTopic_events = tProducer:create_topic('muhkuh-production-events', tTopic_conf)
 
       self.m_strBrokerList = strBrokerList
     end
@@ -147,7 +165,7 @@ end
 
 
 
-function LogKafka:registerInstance(atAttributes)
+function LogKafka:announceInstance(atAttributes)
   local pl = self.pl
 
   -- Merge the attributes with the system attributes.
@@ -347,6 +365,9 @@ function LogKafka:onTestStepFinished()
   atAttributes.test_name = nil
   -- Remove the test step ULID from the attributes.
   atAttributes.test_step_ulid = nil
+
+  -- Try to flush a few messages.
+  self.__flushMessages(500)
 end
 
 
@@ -390,6 +411,9 @@ function LogKafka:onTestRunFinished()
   atAttributes.test_step = nil
   -- Remove the test step ULID from the attributes.
   atAttributes.test_step_ulid = nil
+
+  -- Try to flush the rest of the messages.
+  self.__flushMessages(2000)
 end
 
 
