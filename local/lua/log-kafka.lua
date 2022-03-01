@@ -20,7 +20,15 @@ function LogKafka:_init(tLog, fActivateDebugging)
   local socket = require("socket")
   ulid.set_time_func(socket.gettime)
 
-  -- Convert the argument to boolean.
+  -- Create a new converter from ISO-8859-1 to UTF-8.
+  local iconv = require 'iconv'
+  self.iconv = iconv
+  tIConvUtf8 = iconv.new('UTF-8//TRANSLIT', 'ISO-8859-1')
+  if tIConvUtf8==nil then
+    tLog.error('Failed to create a new converter from ISO-8859-1 to UTF-8.')
+  end
+  self.tIConvUtf8 = tIConvUtf8
+
   self.m_fDebuggingIsActive = fActivateDebugging
   if fActivateDebugging==true then
     tLog.debug('Kafka debugging is active.')
@@ -63,14 +71,46 @@ function LogKafka:_init(tLog, fActivateDebugging)
     self.tTopic_teststations_template = strPath
     tLog.debug('Write messages for the testatations topic to: %s', strPath)
 
-    strPath = '/tmp/muhkuh-production-logs-%03d.json'
+    strPath = '/tmp/muhkuh-production-logs-v2-%03d.json'
     self.tTopic_logs_template = strPath
     tLog.debug('Write messages for the logs topic to: %s', strPath)
 
-    strPath = '/tmp/muhkuh-production-events-%03d.json'
+    strPath = '/tmp/muhkuh-production-events-v2-%03d.json'
     self.tTopic_events_template = strPath
     tLog.debug('Write messages for the events topic to: %s', strPath)
   end
+end
+
+
+
+function LogKafka:__toUtf8(strMsg)
+  local iconv = self.iconv
+  local tIConvUtf8 = self.tIConvUtf8
+  local tLog = self.tLog
+
+  -- Logging in the wrong encoding is still better than no logging. %-(
+  if tIConvUtf8~=nil then
+    -- Convert the data from ISO-8859-1 to UTF-8.
+    local strMsgConv, tError = tIConvUtf8:iconv(strMsg)
+    if strMsgConv==nil then
+      if tError==iconv.ERROR_NO_MEMORY then
+        strError = 'Failed to allocate enough memory in the conversion process.'
+      elseif tError==iconv.ERROR_INVALID then
+        strError = 'An invalid character was found in the input sequence.'
+      elseif tError==iconv.ERROR_INCOMPLETE then
+        strError = 'An incomplete character was found in the input sequence.'
+      elseif tError==iconv.iconv.ERROR_FINALIZED then
+        strError = 'Trying to use an already-finalized converter. This usually means that the user was tweaking the garbage collector private methods.'
+      else
+        strError = 'Unknown error.'
+      end
+      tLog.error('UTF-8 conversion failed: %s', strError)
+    else
+      strMsg = strMsgConv
+    end
+  end
+
+  return strMsg
 end
 
 
@@ -155,8 +195,8 @@ function LogKafka:connect(strBrokerList, atOptions)
         ['compression.level'] = 9
       }
       self.tTopic_teststations = tProducer:create_topic('muhkuh-production-teststations', tTopic_conf)
-      self.tTopic_logs = tProducer:create_topic('muhkuh-production-logs', tTopic_conf)
-      self.tTopic_events = tProducer:create_topic('muhkuh-production-events', tTopic_conf)
+      self.tTopic_logs = tProducer:create_topic('muhkuh-production-logs-v2', tTopic_conf)
+      self.tTopic_events = tProducer:create_topic('muhkuh-production-events-v2', tTopic_conf)
 
       self.m_strBrokerList = strBrokerList
     end
@@ -174,7 +214,7 @@ function LogKafka:announceInstance(atAttributes)
   atAttrMerged.timestamp = self.date(false):fmt('%Y-%m-%d %H:%M:%S')
 
   -- Convert the attributes to JSON.
-  local strJson = self.dkjson.encode(atAttrMerged)
+  local strJson = self:__toUtf8(self.dkjson.encode(atAttrMerged))
 
   -- Send the message to the Kafka topic.
   local tTopic = self.tTopic_teststations
@@ -207,7 +247,7 @@ function LogKafka:__sendMessageBuffer()
     -- Create a new message.
     local atAttr = self.m_atAttributes
     atAttr.log = strMsg
-    local strJson = self.dkjson.encode(atAttr)
+    local strJson = self:__toUtf8(self.dkjson.encode(atAttr))
     atAttr.log = nil
 
     -- Send the message to the Kafka topic.
@@ -237,7 +277,7 @@ function LogKafka:__sendEvent(strEventId, atAttributes)
   atAttr.event = strEventId
   atAttr.eventAttr = atAttributes
   atAttr.timestamp = self.date(false):fmt('%Y-%m-%d %H:%M:%S')
-  local strJson = self.dkjson.encode(atAttr)
+  local strJson = self:__toUtf8(self.dkjson.encode(atAttr))
   atAttr.event = nil
   atAttr.eventAttr = nil
   atAttr.timestamp = nil

@@ -4,6 +4,7 @@
 		<dependency group="com.github.Tieske" module="ulid.lua" artifact="ulid.lua" version="0.1.0.1"/>
 		<dependency group="com.github.diegonehab" module="luasocket" artifact="lua5.4-luasocket" version="3.0.0.3"/>
 		<dependency group="com.github.hoelzro" module="lua-term" artifact="lua5.4-lua-term" version="0.7.3"/>
+		<dependency group="com.github.ittner" module="lua-iconv" artifact="lua5.4-lua-iconv" version="0.0.7.1"/>
 		<dependency group="com.github.keplerproject" module="luafilesystem" artifact="lua5.4-luafilesystem" version="1.7.0.2.3"/>
 		<dependency group="com.github.moteus" module="lua-lluv-poll-zmq" artifact="lua-lluv-poll-zmq" version="0.1.0.1"/>
 		<dependency group="com.github.moteus" module="lua-lluv" artifact="lua5.4-lua-lluv" version="0.1.10.3"/>

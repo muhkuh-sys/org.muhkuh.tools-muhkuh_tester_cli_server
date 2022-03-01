@@ -25,5 +25,6 @@
 		<dependency group="de.dkolf" module="dkjson" artifact="dkjson" version="2.5"/>
 		<dependency group="org.muhkuh.lua" module="kafka" artifact="lua5.4-kafka" version="0.0"/>
 		<dependency group="uk.co.matthewwild" module="luaexpat" artifact="lua5.4-luaexpat" version="1.3"/>
+		<dependency group="com.github.ittner" module="lua-iconv" artifact="lua5.4-lua-iconv" version="0.0"/>
 	</dependencies>
 </jonchki-artifact>
