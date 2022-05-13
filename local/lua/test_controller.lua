@@ -310,7 +310,8 @@ function TestController:onTestTerminate()
     tSocket:send(strResponse)
   end
 
-
+  -- Run a complete garbage collection.
+  collectgarbage('collect')
 end
 
 
